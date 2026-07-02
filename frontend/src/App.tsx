@@ -7,6 +7,10 @@ import { useLiveReadings } from "./hooks/useLiveReadings";
 import type { DS18Probe, DeviceReading } from "./hooks/useLiveReadings";
 import type { User } from "@supabase/supabase-js";
 
+const API = window.location.hostname === "localhost"
+  ? "http://localhost:8000"
+  : `https://${window.location.host}`;
+
 const STATUS_COLOR  = { ok: "#34d399", warn: "#f59e0b", alert: "#ef4444" };
 const STATUS_BG     = { ok: "#1e2538", warn: "#2a2010", alert: "#2d1515" };
 const STATUS_BORDER = { ok: "#334155", warn: "#92400e", alert: "#7c2d12" };
@@ -66,6 +70,8 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
+  const [calibrateMsg, setCalibrateMsg] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -77,6 +83,31 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  async function calibrateBaseline() {
+    if (!device?.gas_resistance?.value) return;
+    const baseline = device.gas_resistance.value;
+    const gas_warn  = Math.round(baseline * 0.60); // 40% drop
+    const gas_alert = Math.round(baseline * 0.40); // 60% drop
+    setCalibrating(true);
+    // Save baseline + auto-calculated thresholds to Supabase
+    const { data } = await supabase.from("thresholds").select("id").single();
+    if (data) {
+      await supabase.from("thresholds").update({
+        gas_baseline: baseline, gas_warn, gas_alert,
+        updated_at: new Date().toISOString(),
+      }).eq("id", data.id);
+    }
+    // Sync to backend
+    await fetch(`${API}/api/thresholds`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gas_warn, gas_alert }),
+    });
+    setCalibrating(false);
+    setCalibrateMsg(`Baseline set: ${Math.round(baseline).toLocaleString()} Ω — warn <${gas_warn.toLocaleString()} Ω, alert <${gas_alert.toLocaleString()} Ω`);
+    setTimeout(() => setCalibrateMsg(""), 6000);
+  }
 
   const readings = useLiveReadings();
   const deviceIds = Object.keys(readings);
@@ -139,20 +170,41 @@ export default function App() {
             {probes.map(probe => <SensorColumn key={probe.address} probe={probe} />)}
           </div>
           {device && (
-            <div style={{ display: "flex", gap: 16 }}>
-              <BMECard
-                label="💧 HUMIDITY"
-                value={device.humidity?.value.toFixed(1) ?? "—"}
-                unit="%"
-                status={device.humidity?.status ?? "ok"}
-              />
-              <BMECard
-                label="⚗ GAS RESISTANCE"
-                value={device.gas_resistance ? Math.round(device.gas_resistance.value).toLocaleString() : "—"}
-                unit="Ω"
-                status={device.gas_resistance?.status ?? "ok"}
-              />
-            </div>
+            <>
+              <div style={{ display: "flex", gap: 16 }}>
+                <BMECard
+                  label="💧 HUMIDITY"
+                  value={device.humidity?.value.toFixed(1) ?? "—"}
+                  unit="%"
+                  status={device.humidity?.status ?? "ok"}
+                />
+                <BMECard
+                  label="⚗ GAS RESISTANCE"
+                  value={device.gas_resistance ? Math.round(device.gas_resistance.value).toLocaleString() : "—"}
+                  unit="Ω"
+                  status={device.gas_resistance?.status ?? "ok"}
+                />
+              </div>
+              <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                <button
+                  onClick={calibrateBaseline}
+                  disabled={calibrating || !device.gas_resistance?.value}
+                  style={{
+                    background: "#1e2538", border: "2px solid #7c3aed", color: "#a78bfa",
+                    borderRadius: 10, padding: "10px 20px", fontSize: 13,
+                    cursor: "pointer", fontWeight: 600,
+                  }}
+                >
+                  {calibrating ? "Setting baseline…" : "🎯 Set Gas Baseline (Calibrate Now)"}
+                </button>
+                {calibrateMsg && (
+                  <span style={{ color: "#34d399", fontSize: 13 }}>✓ {calibrateMsg}</span>
+                )}
+              </div>
+              <p style={{ color: "#475569", fontSize: 11, marginTop: 6 }}>
+                Place sensor in fresh air first, then click to set baseline. Warn = 40% drop, Alert = 60% drop.
+              </p>
+            </>
           )}
         </>
       )}
