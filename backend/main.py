@@ -1,10 +1,9 @@
 import json
+import os
 from collections import defaultdict
 
-import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 # ── In-memory store ───────────────────────────────────────────────────────────
@@ -24,6 +23,7 @@ THRESHOLDS = {
 
 DS18_WARN_SPREAD  = 1.0
 DS18_ALERT_SPREAD = 2.5
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
 def scalar_status(sensor: str, value: float) -> str:
@@ -92,23 +92,8 @@ manager = ConnectionManager()
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-
-@app.get("/")
-def serve_root():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
-
-
-@app.get("/{full_path:path}")
-def serve_spa(full_path: str):
-    file_path = os.path.join(STATIC_DIR, full_path)
-    if os.path.exists(file_path) and os.path.isfile(file_path):
-        return FileResponse(file_path)
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
-
-
-# ── ESP32 posts data here ─────────────────────────────────────────────────────
+# ── API routes (must come before catch-all) ───────────────────────────────────
 @app.post("/ingest")
 async def ingest(request: Request):
     data = await request.json()
@@ -150,3 +135,17 @@ async def ws_live(ws: WebSocket):
             await ws.receive_text()
     except (WebSocketDisconnect, Exception):
         manager.disconnect(ws)
+
+
+# ── Static frontend (catch-all, must be last) ─────────────────────────────────
+@app.get("/")
+def serve_root():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+@app.get("/{full_path:path}")
+def serve_spa(full_path: str):
+    file_path = os.path.join(STATIC_DIR, full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
