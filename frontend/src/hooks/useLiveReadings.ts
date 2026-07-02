@@ -25,7 +25,9 @@ export type DeviceReading = {
   ds18_consensus: "ok" | "warn" | "alert";
 };
 
-const WS_URL = "ws://localhost:8000/ws/live";
+const WS_URL = window.location.hostname === "localhost"
+  ? "ws://localhost:8000/ws/live"
+  : `wss://${window.location.host}/ws/live`;
 
 export function useLiveReadings() {
   const [readings, setReadings] = useState<Record<string, DeviceReading>>({});

@@ -1,6 +1,7 @@
 import json
 from collections import defaultdict
 
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -90,6 +91,21 @@ class ConnectionManager:
 manager = ConnectionManager()
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+
+@app.get("/")
+def serve_root():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+@app.get("/{full_path:path}")
+def serve_spa(full_path: str):
+    file_path = os.path.join(STATIC_DIR, full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
 # ── ESP32 posts data here ─────────────────────────────────────────────────────
