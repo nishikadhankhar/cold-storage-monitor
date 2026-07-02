@@ -25,12 +25,22 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
   async function save() {
     if (!t) return;
-    await supabase.from("thresholds").update({
+    const payload = {
       temp_warn: t.temp_warn, temp_alert: t.temp_alert,
       hum_warn: t.hum_warn,   hum_alert: t.hum_alert,
       gas_warn: t.gas_warn,   gas_alert: t.gas_alert,
-      updated_at: new Date().toISOString(),
+    };
+    await supabase.from("thresholds").update({
+      ...payload, updated_at: new Date().toISOString(),
     }).eq("id", t.id);
+    const API = window.location.hostname === "localhost"
+      ? "http://localhost:8000"
+      : `https://${window.location.host}`;
+    await fetch(`${API}/api/thresholds`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }

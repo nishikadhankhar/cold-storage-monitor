@@ -21,19 +21,29 @@ THRESHOLDS = {
     "ds18_temp":      {"warn": 28.0,  "alert": 32.0,  "invert": False},
 }
 
+# Mutable thresholds updated via /api/thresholds
+thresholds_store = {
+    "temp_warn": 28.0, "temp_alert": 32.0,
+    "hum_warn":  65.0, "hum_alert":  80.0,
+    "gas_warn":  50000,"gas_alert":  10000,
+}
+
 DS18_WARN_SPREAD  = 1.0
 DS18_ALERT_SPREAD = 2.5
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
 def scalar_status(sensor: str, value: float) -> str:
-    rules = THRESHOLDS.get(sensor, {})
-    if rules.get("invert"):
-        if value <= rules.get("alert", 0):            return "alert"
-        if value <= rules.get("warn", 0):             return "warn"
-    else:
-        if value >= rules.get("alert", float("inf")): return "alert"
-        if value >= rules.get("warn",  float("inf")): return "warn"
+    s = thresholds_store
+    if sensor == "humidity":
+        if value >= s["hum_alert"]: return "alert"
+        if value >= s["hum_warn"]:  return "warn"
+    elif sensor == "gas_resistance":
+        if value <= s["gas_alert"]: return "alert"
+        if value <= s["gas_warn"]:  return "warn"
+    elif sensor == "ds18_temp":
+        if value >= s["temp_alert"]: return "alert"
+        if value >= s["temp_warn"]:  return "warn"
     return "ok"
 
 
@@ -135,6 +145,20 @@ async def ws_live(ws: WebSocket):
             await ws.receive_text()
     except (WebSocketDisconnect, Exception):
         manager.disconnect(ws)
+
+
+# ── Thresholds API ───────────────────────────────────────────────────────────
+@app.get("/api/thresholds")
+def get_thresholds():
+    return thresholds_store
+
+@app.post("/api/thresholds")
+async def set_thresholds(request: Request):
+    data = await request.json()
+    for key in thresholds_store:
+        if key in data:
+            thresholds_store[key] = float(data[key])
+    return {"status": "ok", **thresholds_store}
 
 
 # ── Static frontend ───────────────────────────────────────────────────────────
