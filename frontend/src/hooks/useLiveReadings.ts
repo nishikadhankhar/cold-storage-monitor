@@ -29,11 +29,34 @@ const WS_URL = window.location.hostname === "localhost"
   ? "ws://localhost:8000/ws/live"
   : `wss://${window.location.host}/ws/live`;
 
+const API_URL = window.location.hostname === "localhost"
+  ? "http://localhost:8000"
+  : `https://${window.location.host}`;
+
 export function useLiveReadings() {
   const [readings, setReadings] = useState<Record<string, DeviceReading>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const retryDelay = useRef(1000);
 
+  // Poll /devices every 5s as fallback
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_URL}/devices`);
+        const data: DeviceReading[] = await res.json();
+        if (Array.isArray(data)) {
+          const map: Record<string, DeviceReading> = {};
+          data.forEach(d => { if (d.device_id) map[d.device_id] = d; });
+          setReadings(map);
+        }
+      } catch {}
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // WebSocket for real-time updates
   useEffect(() => {
     let cancelled = false;
 
