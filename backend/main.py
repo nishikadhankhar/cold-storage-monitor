@@ -137,15 +137,17 @@ async def ws_live(ws: WebSocket):
         manager.disconnect(ws)
 
 
-# ── Static frontend (catch-all, must be last) ─────────────────────────────────
+# ── Static frontend ───────────────────────────────────────────────────────────
 @app.get("/")
 def serve_root():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-@app.get("/{full_path:path}")
-def serve_spa(full_path: str):
-    file_path = os.path.join(STATIC_DIR, full_path)
-    if os.path.exists(file_path) and os.path.isfile(file_path):
-        return FileResponse(file_path)
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+@app.get("/assets/{filename}")
+def serve_assets(filename: str):
+    return FileResponse(os.path.join(STATIC_DIR, "assets", filename))
+
+
+@app.get("/favicon.svg")
+def serve_favicon():
+    return FileResponse(os.path.join(STATIC_DIR, "favicon.svg"))
