@@ -117,7 +117,7 @@ async def ingest(request: Request):
     if len(h) > MAX_HISTORY:
         h.pop(0)
     await manager.broadcast(enriched)
-    return {"status": "ok"}
+    return {"status": "ok", **thresholds_store}
 
 
 @app.get("/devices")
