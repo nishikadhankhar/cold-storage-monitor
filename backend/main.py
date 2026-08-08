@@ -1,10 +1,50 @@
+import asyncio
 import json
 import os
+import time
+import urllib.request
 from collections import defaultdict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+
+# ── Supabase keepalive ────────────────────────────────────────────────────────
+# Free-tier projects pause after prolonged API inactivity. Nothing else in this
+# system touches Supabase unless a user logs in, so ping it periodically.
+SUPABASE_URL = "https://vhiqhjljmxiarcikggoc.supabase.co"
+SUPABASE_ANON_KEY = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoaXFoamxqbXhpYXJjaWtnZ29jIiwicm9sZSI6"
+    "ImFub24iLCJpYXQiOjE3ODI5ODM0OTEsImV4cCI6MjA5ODU1OTQ5MX0."
+    "pXlj_UUP16Syv3XwVl_LRlIgsCp0j3oYQKMYwZZ-jEw"
+)
+KEEPALIVE_INTERVAL = 6 * 60 * 60  # 6 hours
+_last_keepalive: float | None = None  # None = never pinged, so ping on first data
+
+
+def _ping_supabase() -> None:
+    # Real Postgres query (RLS returns [] for anon, but the DB is still touched).
+    req = urllib.request.Request(
+        f"{SUPABASE_URL}/rest/v1/thresholds?select=id&limit=1",
+        headers={"apikey": SUPABASE_ANON_KEY,
+                 "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"Supabase keepalive: {resp.status}")
+    except Exception as e:
+        print(f"Supabase keepalive failed: {e}")
+
+
+async def keepalive_if_due() -> None:
+    """Ping Supabase at most once per KEEPALIVE_INTERVAL. Never blocks the caller."""
+    global _last_keepalive
+    now = time.monotonic()
+    if _last_keepalive is not None and now - _last_keepalive < KEEPALIVE_INTERVAL:
+        return
+    _last_keepalive = now
+    await asyncio.to_thread(_ping_supabase)
 
 # ── In-memory store ───────────────────────────────────────────────────────────
 latest: dict[str, dict] = {}
@@ -117,6 +157,7 @@ async def ingest(request: Request):
     if len(h) > MAX_HISTORY:
         h.pop(0)
     await manager.broadcast(enriched)
+    await keepalive_if_due()
     return {"status": "ok", **thresholds_store}
 
 
